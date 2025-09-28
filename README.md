@@ -129,6 +129,7 @@ forge test --gas-report
 ```
 
 **Test Coverage**
+
 . ✅ Normal activity detection (should not trigger)
 
 . ✅ Treasury drain detection (30%+ decrease)
