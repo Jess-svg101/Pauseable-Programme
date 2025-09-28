@@ -167,7 +167,7 @@ Create a ```drosera.config.json``` file:
       "trapAddress": "0x...",
       "configAddress": "0x...",
       "targetContract": "0x...",
-      "network": "mainnet",
+      "network": "testnet",
       "responseFunction": "respondToIncident(string,bytes)",
       "monitoringEnabled": true,
       "alerting": {
