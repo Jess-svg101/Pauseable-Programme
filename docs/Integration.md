@@ -116,7 +116,7 @@ drosera create-trap \
     --trap-address TRAP_ADDRESS \
     --config-address CONFIG_ADDRESS \
     --response-function "respondToIncident(string,bytes)" \
-    --network mainnet \
+    --network testnet \
     --tags "defi,security,auto-halt"
 
 # Save the returned TRAP_ID
