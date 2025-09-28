@@ -5,25 +5,25 @@ A comprehensive Drosera trap system that automatically detects and halts unusual
 
 This trap monitors blockchain activity in real-time and automatically pauses target contracts when unusual patterns are detected, providing protection against:
 
-. Treasury Drains: Rapid or large-scale asset withdrawals
+__. Treasury Drains:__ Rapid or large-scale asset withdrawals
 
-. Token Supply Manipulation: Excessive minting or burning events
+__. Token Supply Manipulation:__ Excessive minting or burning events
 
-. Governance Flooding: Spam proposal attacks
+__. Governance Flooding:__ Spam proposal attacks
 
-. Rapid Activity Patterns: Coordinated multi-transaction exploits
+__. Rapid Activity Patterns:__ Coordinated multi-transaction exploits
 
 # 🏗️ How It Works
 
 The trap follows the standard Drosera architecture:
 
-. Data Collection (collect()): Gathers activity metrics every block
+__. Data Collection (collect()):__ Gathers activity metrics every block
 
-. Pattern Analysis (shouldRespond()): Analyzes historical data using time-series analysis
+__. Pattern Analysis (shouldRespond()):__ Analyzes historical data using time-series analysis
 
-. Incident Detection: Detects anomalies across configurable time windows
+__. Incident Detection:__ Detects anomalies across configurable time windows
 
-. Automated Response: Triggers pause functionality via response contract
+__. Automated Response:__ Triggers pause functionality via response contract
 
 # 🔍 Detection Methods
 **Treasury Drain Detection**
