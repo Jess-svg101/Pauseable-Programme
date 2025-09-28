@@ -118,3 +118,23 @@ forge test --gas-report
 # Run with coverage
 forge coverage
 ```
+
+# Test Scenarios
+
+✅ Normal activity detection
+
+✅ Treasury drain detection
+
+✅ Supply manipulation detection
+
+✅ Governance flooding detection
+
+✅ Rapid activity pattern detection
+
+✅ Incident response execution
+
+✅ Manual emergency controls
+
+✅ Authorization and access control
+
+
