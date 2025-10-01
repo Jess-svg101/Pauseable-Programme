@@ -1,404 +1,341 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-
-interface IPausable {
-    function pause() external;
-    function unpause() external;
-    function isPaused() external view returns (bool);
-}
-
-contract AutoHaltTrap is Trap {
-    // Activity monitoring data structure
-    struct ActivityData {
-        uint256 timestamp;
-        uint256 treasuryBalance;
-        uint256 totalSupply;
-        uint256 governanceProposalCount;
-        uint256 largeTransferCount;
-        uint256 mintingEvents;
-        uint256 drainEvents;
-        address lastActor;
-        bool emergencyState;
-    }
-
-    // Threshold configuration
-    struct ThresholdConfig {
-        uint256 maxTreasuryDrainPercent;      // Max % drain allowed (e.g., 30 = 30%)
-        uint256 maxSupplyIncreasePercent;     // Max % supply increase (e.g., 50 = 50%)
-        uint256 maxGovernanceProposalsPerBlock; // Max proposals per analysis window
-        uint256 maxLargeTransfersPerBlock;    // Max large transfers per block
-        uint256 rapidActionThreshold;         // Blocks between actions to consider "rapid"
-        uint256 analysisWindow;               // Number of blocks to analyze
-        address targetContract;               // Contract to monitor
-        uint256 largeTransferThreshold;       // Minimum amount to consider "large"
-    }
-
-    ThresholdConfig public thresholds;
+/**
+ * @title AutoHaltTrap
+ * @notice Drosera-compliant trap that detects unusual activity patterns
+ * @dev Stateless implementation - all configuration encoded in collect() data
+ * 
+ * KEY DROSERA CONSTRAINTS:
+ * - No constructor arguments (deployed fresh each block)
+ * - No persistent state (resets every block)
+ * - collect() must be pure/view only
+ * - shouldRespond() must be pure (no state reads)
+ * - data[0] = current block, data[n-1] = oldest block
+ */
+contract AutoHaltTrap {
     
-    // Events
-    event IncidentDetected(string incidentType, uint256 severity, bytes32 dataHash);
-    event ThresholdBreached(string metric, uint256 actual, uint256 threshold);
-
-    constructor(
-        address _targetContract,
-        uint256 _maxTreasuryDrainPercent,
-        uint256 _maxSupplyIncreasePercent,
-        uint256 _maxGovernanceProposalsPerBlock,
-        uint256 _maxLargeTransfersPerBlock,
-        uint256 _rapidActionThreshold,
-        uint256 _analysisWindow,
-        uint256 _largeTransferThreshold
-    ) {
-        thresholds = ThresholdConfig({
-            targetContract: _targetContract,
-            maxTreasuryDrainPercent: _maxTreasuryDrainPercent,
-            maxSupplyIncreasePercent: _maxSupplyIncreasePercent,
-            maxGovernanceProposalsPerBlock: _maxGovernanceProposalsPerBlock,
-            maxLargeTransfersPerBlock: _maxLargeTransfersPerBlock,
-            rapidActionThreshold: _rapidActionThreshold,
-            analysisWindow: _analysisWindow,
-            largeTransferThreshold: _largeTransferThreshold
-        });
-    }
-
     /**
-     * @dev Collects current activity data for the target contract
-     * This function is called every block by Drosera operators
+     * @dev Activity data structure for a single block
+     * All metrics must be computed off-chain and passed in
      */
-    function collect() external view override returns (bytes memory) {
-        ActivityData memory data = ActivityData({
-            timestamp: block.timestamp,
-            treasuryBalance: _getTreasuryBalance(),
-            totalSupply: _getTotalSupply(),
-            governanceProposalCount: _getGovernanceProposalCount(),
-            largeTransferCount: _getLargeTransferCount(),
-            mintingEvents: _getMintingEvents(),
-            drainEvents: _getDrainEvents(),
-            lastActor: _getLastSignificantActor(),
-            emergencyState: _checkEmergencyState()
-        });
-
-        return abi.encode(data);
+    struct ActivityData {
+        uint256 blockNumber;
+        uint256 timestamp;
+        uint256 treasuryBalance;      // Current treasury balance
+        uint256 totalSupply;          // Current token supply
+        uint256 largeTransferCount;   // Count of transfers > threshold
+        uint256 mintEventCount;       // Count of mint events
+        uint256 withdrawalEventCount; // Count of withdrawal events
+        uint256 proposalCount;        // Count of governance proposals
+        address lastSignificantActor; // Last actor in large transaction
+    }
+    
+    /**
+     * @dev Configuration structure embedded in collect() output
+     * Allows operator to configure thresholds without state
+     */
+    struct TrapConfig {
+        uint256 maxTreasuryDrainBps;      // Max drain in basis points (e.g., 3000 = 30%)
+        uint256 maxSupplyIncreaseBps;     // Max supply increase BPS (e.g., 5000 = 50%)
+        uint256 maxProposalsPerWindow;    // Max proposals in analysis window
+        uint256 maxLargeTransfersPerBlock; // Max large transfers per block
+        uint256 rapidActionThreshold;     // Blocks to consider "rapid"
+        uint256 analysisWindowSize;       // Number of blocks to analyze
     }
 
     /**
-     * @dev Analyzes historical data to determine if an incident occurred
-     * @param data Array of encoded ActivityData from previous blocks
-     * @return incident True if incident detected
-     * @return responseData Encoded data for the response function
+     * @notice Collects activity data for current block
+     * @dev Called by Drosera operator every block
+     * @return Encoded ActivityData and TrapConfig
+     * 
+     * IMPLEMENTATION NOTE:
+     * In production, this would read on-chain state or accept operator-computed metrics.
+     * For demo purposes, returns empty data. Operator must populate this via off-chain computation.
+     */
+    function collect() external view returns (bytes memory) {
+        // Default configuration (operators can override by encoding custom values)
+        TrapConfig memory config = TrapConfig({
+            maxTreasuryDrainBps: 3000,        // 30%
+            maxSupplyIncreaseBps: 5000,       // 50%
+            maxProposalsPerWindow: 10,        // 10 proposals
+            maxLargeTransfersPerBlock: 5,     // 5 large transfers
+            rapidActionThreshold: 3,          // 3 blocks
+            analysisWindowSize: 10            // 10 blocks
+        });
+        
+        // Activity data for current block (would be computed off-chain in production)
+        ActivityData memory data = ActivityData({
+            blockNumber: block.number,
+            timestamp: block.timestamp,
+            treasuryBalance: 0,               // Operator computes from events/state
+            totalSupply: 0,                   // Operator computes from events/state
+            largeTransferCount: 0,            // Operator counts from logs
+            mintEventCount: 0,                // Operator counts from logs
+            withdrawalEventCount: 0,          // Operator counts from logs
+            proposalCount: 0,                 // Operator counts from logs
+            lastSignificantActor: address(0)  // Operator extracts from logs
+        });
+        
+        // Encode both config and data so shouldRespond can be pure
+        return abi.encode(config, data);
+    }
+
+    /**
+     * @notice Analyzes historical data to detect incidents
+     * @dev PURE function - no state reads allowed
+     * @param dataPoints Array where data[0] = current block, data[n-1] = oldest
+     * @return incident True if unusual activity detected
+     * @return responseData Encoded incident details
      */
     function shouldRespond(
-        bytes[] calldata data
-    ) external pure override returns (bool incident, bytes memory responseData) {
-        if (data.length < 2) {
-            // Need at least 2 data points for comparison
+        bytes[] calldata dataPoints
+    ) external pure returns (bool incident, bytes memory responseData) {
+        
+        // Need at least 2 data points for comparison
+        if (dataPoints.length < 2) {
             return (false, "");
         }
-
-        // Decode the latest data points
-        ActivityData memory current = abi.decode(data[data.length - 1], (ActivityData));
-        ActivityData memory previous = abi.decode(data[data.length - 2], (ActivityData));
-
-        // Check for immediate emergency state
-        if (current.emergencyState) {
-            return (true, abi.encode("Emergency state detected", current.timestamp));
+        
+        // Decode current and previous block data
+        // NOTE: data[0] = current, data[1] = previous (Drosera convention)
+        (TrapConfig memory config, ActivityData memory current) = abi.decode(
+            dataPoints[0], 
+            (TrapConfig, ActivityData)
+        );
+        
+        (, ActivityData memory previous) = abi.decode(
+            dataPoints[1], 
+            (TrapConfig, ActivityData)
+        );
+        
+        // 1. Check for treasury drain
+        if (_detectTreasuryDrain(current, previous, config)) {
+            uint256 drainAmount = previous.treasuryBalance - current.treasuryBalance;
+            uint256 drainBps = (drainAmount * 10000) / previous.treasuryBalance;
+            
+            return (
+                true, 
+                abi.encode(
+                    "TREASURY_DRAIN",
+                    current.blockNumber,
+                    drainBps,
+                    drainAmount
+                )
+            );
         }
-
-        // Analyze treasury drain
-        if (_detectTreasuryDrain(current, previous)) {
-            return (true, abi.encode("Excessive treasury drain", current.timestamp));
+        
+        // 2. Check for supply manipulation
+        if (_detectSupplyManipulation(current, previous, config)) {
+            uint256 increaseAmount = current.totalSupply - previous.totalSupply;
+            uint256 increaseBps = (increaseAmount * 10000) / previous.totalSupply;
+            
+            return (
+                true,
+                abi.encode(
+                    "SUPPLY_MANIPULATION", 
+                    current.blockNumber,
+                    increaseBps,
+                    increaseAmount
+                )
+            );
         }
-
-        // Analyze token supply manipulation
-        if (_detectSupplyManipulation(current, previous)) {
-            return (true, abi.encode("Token supply manipulation", current.timestamp));
+        
+        // 3. Check for governance flooding (requires full window)
+        if (dataPoints.length >= config.analysisWindowSize) {
+            if (_detectGovernanceFlooding(dataPoints, config)) {
+                uint256 totalProposals = _countTotalProposals(dataPoints, config);
+                
+                return (
+                    true,
+                    abi.encode(
+                        "GOVERNANCE_FLOODING",
+                        current.blockNumber,
+                        totalProposals,
+                        config.maxProposalsPerWindow
+                    )
+                );
+            }
         }
-
-        // Analyze governance flooding
-        if (_detectGovernanceFlooding(data)) {
-            return (true, abi.encode("Governance flooding attack", current.timestamp));
+        
+        // 4. Check for rapid suspicious activity
+        if (dataPoints.length >= config.rapidActionThreshold) {
+            if (_detectRapidActivity(dataPoints, config)) {
+                return (
+                    true,
+                    abi.encode(
+                        "RAPID_ACTIVITY",
+                        current.blockNumber,
+                        current.lastSignificantActor,
+                        config.rapidActionThreshold
+                    )
+                );
+            }
         }
-
-        // Analyze rapid suspicious activity
-        if (_detectRapidActivity(data)) {
-            return (true, abi.encode("Rapid suspicious activity", current.timestamp));
-        }
-
-        // Analyze pattern-based attacks
-        if (_detectSuspiciousPatterns(data)) {
-            return (true, abi.encode("Suspicious activity pattern", current.timestamp));
-        }
-
+        
+        // No incident detected
         return (false, "");
     }
-
+    
+    // ============ PURE DETECTION FUNCTIONS ============
+    
     /**
-     * @dev Specifies which events to monitor
+     * @dev Detects treasury drain exceeding threshold
+     * @param current Current block data
+     * @param previous Previous block data
+     * @param config Trap configuration
+     * @return True if drain exceeds threshold
      */
-    function eventLogFilters() public view override returns (EventFilter[] memory) {
-        EventFilter[] memory filters = new EventFilter[](5);
-        
-        // Monitor ERC20 Transfer events
-        filters[0] = EventFilter({
-            contractAddress: thresholds.targetContract,
-            signature: "Transfer(address,address,uint256)"
-        });
-        
-        // Monitor Mint events
-        filters[1] = EventFilter({
-            contractAddress: thresholds.targetContract,
-            signature: "Mint(address,uint256)"
-        });
-        
-        // Monitor Governance events
-        filters[2] = EventFilter({
-            contractAddress: thresholds.targetContract,
-            signature: "ProposalCreated(uint256,address,address[],uint256[],string[],bytes[],uint256,uint256,string)"
-        });
-        
-        // Monitor Withdrawal events
-        filters[3] = EventFilter({
-            contractAddress: thresholds.targetContract,
-            signature: "Withdrawal(address,uint256)"
-        });
-
-        // Monitor Pause events
-        filters[4] = EventFilter({
-            contractAddress: thresholds.targetContract,
-            signature: "Paused(address)"
-        });
-        
-        return filters;
-    }
-
-    // ============ INTERNAL ANALYSIS FUNCTIONS ============
-
     function _detectTreasuryDrain(
-        ActivityData memory current, 
-        ActivityData memory previous
-    ) internal view returns (bool) {
-        if (previous.treasuryBalance == 0) return false;
+        ActivityData memory current,
+        ActivityData memory previous,
+        TrapConfig memory config
+    ) internal pure returns (bool) {
         
-        uint256 balanceChange = previous.treasuryBalance - current.treasuryBalance;
-        uint256 percentageChange = (balanceChange * 100) / previous.treasuryBalance;
+        // Skip if no previous balance
+        if (previous.treasuryBalance == 0) {
+            return false;
+        }
         
-        return percentageChange > thresholds.maxTreasuryDrainPercent;
+        // Skip if balance increased
+        if (current.treasuryBalance >= previous.treasuryBalance) {
+            return false;
+        }
+        
+        // Calculate drain percentage in basis points
+        uint256 drainAmount = previous.treasuryBalance - current.treasuryBalance;
+        uint256 drainBps = (drainAmount * 10000) / previous.treasuryBalance;
+        
+        // Check against threshold
+        return drainBps > config.maxTreasuryDrainBps;
     }
-
+    
+    /**
+     * @dev Detects token supply manipulation
+     * @param current Current block data
+     * @param previous Previous block data
+     * @param config Trap configuration
+     * @return True if supply increase exceeds threshold
+     */
     function _detectSupplyManipulation(
-        ActivityData memory current, 
-        ActivityData memory previous
-    ) internal view returns (bool) {
-        if (previous.totalSupply == 0) return false;
+        ActivityData memory current,
+        ActivityData memory previous,
+        TrapConfig memory config
+    ) internal pure returns (bool) {
         
-        if (current.totalSupply > previous.totalSupply) {
-            uint256 supplyIncrease = current.totalSupply - previous.totalSupply;
-            uint256 percentageIncrease = (supplyIncrease * 100) / previous.totalSupply;
-            
-            return percentageIncrease > thresholds.maxSupplyIncreasePercent;
+        // Skip if no previous supply
+        if (previous.totalSupply == 0) {
+            return false;
         }
         
-        return false;
-    }
-
-    function _detectGovernanceFlooding(bytes[] calldata data) internal view returns (bool) {
-        if (data.length < thresholds.analysisWindow) return false;
-        
-        uint256 recentProposals = 0;
-        uint256 startIndex = data.length > thresholds.analysisWindow ? 
-            data.length - thresholds.analysisWindow : 0;
-        
-        for (uint256 i = startIndex; i < data.length; i++) {
-            ActivityData memory blockData = abi.decode(data[i], (ActivityData));
-            recentProposals += blockData.governanceProposalCount;
+        // Skip if supply decreased
+        if (current.totalSupply <= previous.totalSupply) {
+            return false;
         }
         
-        return recentProposals > thresholds.maxGovernanceProposalsPerBlock * thresholds.analysisWindow;
-    }
-
-    function _detectRapidActivity(bytes[] calldata data) internal view returns (bool) {
-        if (data.length < 3) return false;
+        // Calculate supply increase in basis points
+        uint256 increaseAmount = current.totalSupply - previous.totalSupply;
+        uint256 increaseBps = (increaseAmount * 10000) / previous.totalSupply;
         
-        uint256 rapidActions = 0;
+        // Check against threshold
+        return increaseBps > config.maxSupplyIncreaseBps;
+    }
+    
+    /**
+     * @dev Detects governance proposal flooding
+     * @param dataPoints Historical data array
+     * @param config Trap configuration
+     * @return True if proposal count exceeds threshold
+     */
+    function _detectGovernanceFlooding(
+        bytes[] calldata dataPoints,
+        TrapConfig memory config
+    ) internal pure returns (bool) {
+        
+        uint256 totalProposals = _countTotalProposals(dataPoints, config);
+        
+        return totalProposals > config.maxProposalsPerWindow;
+    }
+    
+    /**
+     * @dev Counts total proposals in analysis window
+     * @param dataPoints Historical data array
+     * @param config Trap configuration
+     * @return Total proposal count
+     */
+    function _countTotalProposals(
+        bytes[] calldata dataPoints,
+        TrapConfig memory config
+    ) internal pure returns (uint256) {
+        
+        uint256 totalProposals = 0;
+        uint256 blocksToCheck = config.analysisWindowSize;
+        
+        if (dataPoints.length < blocksToCheck) {
+            blocksToCheck = dataPoints.length;
+        }
+        
+        for (uint256 i = 0; i < blocksToCheck; i++) {
+            (, ActivityData memory data) = abi.decode(
+                dataPoints[i],
+                (TrapConfig, ActivityData)
+            );
+            totalProposals += data.proposalCount;
+        }
+        
+        return totalProposals;
+    }
+    
+    /**
+     * @dev Detects rapid suspicious activity patterns
+     * @param dataPoints Historical data array
+     * @param config Trap configuration
+     * @return True if rapid activity detected
+     */
+    function _detectRapidActivity(
+        bytes[] calldata dataPoints,
+        TrapConfig memory config
+    ) internal pure returns (bool) {
+        
+        uint256 blocksToCheck = config.rapidActionThreshold;
+        if (dataPoints.length < blocksToCheck) {
+            blocksToCheck = dataPoints.length;
+        }
+        
+        // Check for same actor in consecutive blocks
         address lastActor = address(0);
+        uint256 consecutiveActions = 0;
         
-        for (uint256 i = data.length - thresholds.rapidActionThreshold; i < data.length; i++) {
-            ActivityData memory blockData = abi.decode(data[i], (ActivityData));
+        for (uint256 i = 0; i < blocksToCheck; i++) {
+            (, ActivityData memory data) = abi.decode(
+                dataPoints[i],
+                (TrapConfig, ActivityData)
+            );
             
-            if (blockData.lastActor == lastActor && lastActor != address(0)) {
-                rapidActions++;
+            // Check for same actor
+            if (data.lastSignificantActor != address(0) && 
+                data.lastSignificantActor == lastActor) {
+                consecutiveActions++;
             }
             
-            if (blockData.largeTransferCount > thresholds.maxLargeTransfersPerBlock) {
-                rapidActions++;
+            // Check for excessive large transfers
+            if (data.largeTransferCount > config.maxLargeTransfersPerBlock) {
+                return true;
             }
             
-            lastActor = blockData.lastActor;
+            lastActor = data.lastSignificantActor;
         }
         
-        return rapidActions >= thresholds.rapidActionThreshold;
-    }
-
-    function _detectSuspiciousPatterns(bytes[] calldata data) internal pure returns (bool) {
-        if (data.length < 5) return false;
-        
-        // Look for alternating high-activity patterns (potential coordinated attack)
-        uint256 highActivityBlocks = 0;
-        
-        for (uint256 i = data.length - 5; i < data.length; i++) {
-            ActivityData memory blockData = abi.decode(data[i], (ActivityData));
-            
-            if (blockData.largeTransferCount > 0 || 
-                blockData.mintingEvents > 0 || 
-                blockData.drainEvents > 2) {
-                highActivityBlocks++;
-            }
-        }
-        
-        return highActivityBlocks >= 3; // 3 out of 5 blocks showing high activity
-    }
-
-    // ============ DATA COLLECTION HELPERS ============
-
-    function _getTreasuryBalance() internal view returns (uint256) {
-        // Implementation depends on your specific treasury contract
-        // This is a placeholder - replace with actual treasury balance logic
-        if (thresholds.targetContract != address(0)) {
-            try IERC20(thresholds.targetContract).balanceOf(thresholds.targetContract) returns (uint256 balance) {
-                return balance;
-            } catch {
-                return 0;
-            }
-        }
-        return 0;
-    }
-
-    function _getTotalSupply() internal view returns (uint256) {
-        if (thresholds.targetContract != address(0)) {
-            try IERC20(thresholds.targetContract).totalSupply() returns (uint256 supply) {
-                return supply;
-            } catch {
-                return 0;
-            }
-        }
-        return 0;
-    }
-
-    function _getGovernanceProposalCount() internal view returns (uint256) {
-        // Count recent governance events from stored event logs
-        EventLog[] memory logs = getEventLogs();
-        uint256 count = 0;
-        
-        for (uint256 i = 0; i < logs.length; i++) {
-            if (logs[i].topics.length > 0 && 
-                logs[i].topics[0] == keccak256("ProposalCreated(uint256,address,address[],uint256[],string[],bytes[],uint256,uint256,string)")) {
-                count++;
-            }
-        }
-        
-        return count;
-    }
-
-    function _getLargeTransferCount() internal view returns (uint256) {
-        EventLog[] memory logs = getEventLogs();
-        uint256 count = 0;
-        
-        for (uint256 i = 0; i < logs.length; i++) {
-            if (logs[i].topics.length > 0 && 
-                logs[i].topics[0] == keccak256("Transfer(address,address,uint256)")) {
-                
-                if (logs[i].data.length >= 32) {
-                    uint256 amount = abi.decode(logs[i].data, (uint256));
-                    if (amount >= thresholds.largeTransferThreshold) {
-                        count++;
-                    }
-                }
-            }
-        }
-        
-        return count;
-    }
-
-    function _getMintingEvents() internal view returns (uint256) {
-        EventLog[] memory logs = getEventLogs();
-        uint256 count = 0;
-        
-        for (uint256 i = 0; i < logs.length; i++) {
-            if (logs[i].topics.length > 0 && 
-                logs[i].topics[0] == keccak256("Mint(address,uint256)")) {
-                count++;
-            }
-        }
-        
-        return count;
-    }
-
-    function _getDrainEvents() internal view returns (uint256) {
-        EventLog[] memory logs = getEventLogs();
-        uint256 count = 0;
-        
-        for (uint256 i = 0; i < logs.length; i++) {
-            if (logs[i].topics.length > 0 && 
-                logs[i].topics[0] == keccak256("Withdrawal(address,uint256)")) {
-                count++;
-            }
-        }
-        
-        return count;
-    }
-
-    function _getLastSignificantActor() internal view returns (address) {
-        EventLog[] memory logs = getEventLogs();
-        
-        for (uint256 i = logs.length; i > 0; i--) {
-            if (logs[i-1].topics.length > 1) {
-                return address(uint160(uint256(logs[i-1].topics[1])));
-            }
-        }
-        
-        return address(0);
-    }
-
-    function _checkEmergencyState() internal view returns (bool) {
-        // Check if target contract is already paused or in emergency state
-        if (thresholds.targetContract != address(0)) {
-            try IPausable(thresholds.targetContract).isPaused() returns (bool paused) {
-                return paused;
-            } catch {
-                return false;
-            }
-        }
-        return false;
-    }
-
-    // ============ CONFIGURATION FUNCTIONS ============
-
-    function updateThresholds(
-        uint256 _maxTreasuryDrainPercent,
-        uint256 _maxSupplyIncreasePercent,
-        uint256 _maxGovernanceProposalsPerBlock,
-        uint256 _maxLargeTransfersPerBlock,
-        uint256 _rapidActionThreshold,
-        uint256 _analysisWindow,
-        uint256 _largeTransferThreshold
-    ) external {
-        thresholds.maxTreasuryDrainPercent = _maxTreasuryDrainPercent;
-        thresholds.maxSupplyIncreasePercent = _maxSupplyIncreasePercent;
-        thresholds.maxGovernanceProposalsPerBlock = _maxGovernanceProposalsPerBlock;
-        thresholds.maxLargeTransfersPerBlock = _maxLargeTransfersPerBlock;
-        thresholds.rapidActionThreshold = _rapidActionThreshold;
-        thresholds.analysisWindow = _analysisWindow;
-        thresholds.largeTransferThreshold = _largeTransferThreshold;
-    }
-
-    function getThresholds() external view returns (ThresholdConfig memory) {
-        return thresholds;
+        // Trigger if same actor in 2+ consecutive blocks
+        return consecutiveActions >= 2;
     }
 }
 
-// Required interface for ERC20 interactions
-interface IERC20 {
-    function balanceOf(address account) external view returns (uint256);
-    function totalSupply() external view returns (uint256);
+/**
+ * @notice ITrap interface for reference
+ * @dev This is the actual Drosera interface your trap must implement
+ */
+interface ITrap {
+    function collect() external view returns (bytes memory);
+    function shouldRespond(bytes[] calldata) external pure returns (bool, bytes memory);
 }
